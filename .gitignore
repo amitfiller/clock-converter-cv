@@ -1,0 +1,16 @@
+# Cursor IDE - local config, not relevant for teammates
+.cursorrules
+.cursor/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment
+venv/
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
