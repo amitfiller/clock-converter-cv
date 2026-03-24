@@ -98,6 +98,17 @@ def check_pairs(digital_ts, analog_ts, issues):
     return len(missing_digital) == 0 and len(missing_analog) == 0
 
 
+# מדפיס טווחים של שעה/דקה/שנייה מתוך חותמות זמן / Print hour/minute/second ranges from timestamps.
+def print_time_ranges(timestamps):
+    parsed = [tuple(map(int, ts.split("_"))) for ts in timestamps]
+    hours = [h for h, _, _ in parsed]
+    minutes = [m for _, m, _ in parsed]
+    seconds = [s for _, _, s in parsed]
+    print(f"Hour range: {min(hours)}-{max(hours)}")
+    print(f"Minute range: {min(minutes)}-{max(minutes)}")
+    print(f"Second range: {min(seconds)}-{max(seconds)}")
+
+
 # שומר דוגמת השוואה ויזואלית של 5 זוגות / Save 5 random [digital | analog] sample rows.
 def save_visual_sample(common_timestamps, digital_dir, analog_dir, output_path, issues):
     if len(common_timestamps) < 5:
@@ -144,6 +155,8 @@ def main():
     print(f"Pairs check: {'✅' if pairs_ok else '❌'}")
     print(f"Visual sample check: {'✅' if sample_ok else '❌'}")
     print(f"Validation sample output: {sample_out}")
+    if digital_ts:
+        print_time_ranges(digital_ts)
 
     if issues:
         print("\nIssues:")

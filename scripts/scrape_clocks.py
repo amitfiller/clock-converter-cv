@@ -32,7 +32,7 @@ body { margin: 0; width: 100vw; height: 100vh; display: grid; place-items: cente
 
 # יוצר רשימה אקראית של זמנים ייחודיים / Generate unique random time tuples.
 def generate_time_combinations(n=400):
-    all_times = [(h, m, s) for h in range(1, 13) for m in range(60) for s in range(60)]
+    all_times = [(h, m, s) for h in range(24) for m in range(60) for s in range(60)]
     if n > len(all_times):
         raise ValueError(f"Requested {n} times, but only {len(all_times)} are possible.")
     return random.sample(all_times, n)
@@ -120,6 +120,10 @@ def main():
     analog_dir = base_dir / "data" / "raw" / "analog"
     digital_dir.mkdir(parents=True, exist_ok=True)
     analog_dir.mkdir(parents=True, exist_ok=True)
+    for old_file in digital_dir.glob("*.png"):
+        old_file.unlink()
+    for old_file in analog_dir.glob("*.png"):
+        old_file.unlink()
     with tempfile.TemporaryDirectory() as tmp:
         digital_html = Path(tmp) / "digital_clock.html"
         digital_html.write_text(DIGITAL_HTML, encoding="utf-8")
