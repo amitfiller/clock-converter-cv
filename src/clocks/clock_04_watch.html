@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#1c1c1c;display:flex;align-items:center;justify-content:center;height:100vh;}
+.clock{position:relative;width:300px;height:300px;}
+.bezel{position:absolute;width:300px;height:300px;border-radius:50%;
+  background:linear-gradient(135deg,#fdfdfd,#ceced6,#fdfdfd);
+  box-shadow:0 8px 30px rgba(0,0,0,0.7),inset 0 1px 3px rgba(255,255,255,0.5);}
+.face{position:absolute;width:250px;height:250px;border-radius:50%;
+  background:#f5f5f5;border:1px solid #ccc;top:50%;left:50%;transform:translate(-50%,-50%);}
+#hour,#minute,#second{position:absolute;bottom:50%;left:50%;
+  transform-origin:bottom center;border-radius:2px;z-index:5;}
+#hour  {width:8px; height:54px; background:#0f1743;margin-left:-4px;}
+#minute{width:5px; height:78px; background:#0f1743;margin-left:-2.5px;}
+#second{width:2px; height:88px;background:#ff5456;margin-left:-1px;}
+.dot{position:absolute;width:12px;height:12px;background:#0f1743;border-radius:50%;
+  top:50%;left:50%;transform:translate(-50%,-50%);z-index:10;}
+</style></head><body>
+<div class="clock">
+  <div class="bezel"></div>
+  <div class="face"><span style="position:absolute;left:173px;top:41.9px;transform:translate(-50%,-50%);font:bold 13px Arial;color:#0f1743;">1</span><span style="position:absolute;left:208.1px;top:77px;transform:translate(-50%,-50%);font:bold 13px Arial;color:#0f1743;">2</span><span style="position:absolute;left:221px;top:125px;transform:translate(-50%,-50%);font:bold 13px Arial;color:#0f1743;">3</span><span style="position:absolute;left:208.1px;top:173px;transform:translate(-50%,-50%);font:bold 13px Arial;color:#0f1743;">4</span><span style="position:absolute;left:173px;top:208.1px;transform:translate(-50%,-50%);font:bold 13px Arial;color:#0f1743;">5</span><span style="position:absolute;left:125px;top:221px;transform:translate(-50%,-50%);font:bold 13px Arial;color:#0f1743;">6</span><span style="position:absolute;left:77px;top:208.1px;transform:translate(-50%,-50%);font:bold 13px Arial;color:#0f1743;">7</span><span style="position:absolute;left:41.9px;top:173px;transform:translate(-50%,-50%);font:bold 13px Arial;color:#0f1743;">8</span><span style="position:absolute;left:29px;top:125px;transform:translate(-50%,-50%);font:bold 13px Arial;color:#0f1743;">9</span><span style="position:absolute;left:41.9px;top:77px;transform:translate(-50%,-50%);font:bold 13px Arial;color:#0f1743;">10</span><span style="position:absolute;left:77px;top:41.9px;transform:translate(-50%,-50%);font:bold 13px Arial;color:#0f1743;">11</span><span style="position:absolute;left:125px;top:29px;transform:translate(-50%,-50%);font:bold 13px Arial;color:#0f1743;">12</span></div>
+  <div id="hour"></div><div id="minute"></div><div id="second"></div>
+  <div class="dot"></div>
+</div>
+<script>
+const _p = new URLSearchParams(window.location.search);
+const H = parseInt(_p.get('h') || 0);
+const M = parseInt(_p.get('m') || 0);
+const S = parseInt(_p.get('s') || 0);
+var hour   = 360*(H/12);
+var minute = 360*(M/60);
+var second = 360*(S/60);
+document.getElementById("hour").style.transform   = 'rotate(' + hour   + 'deg)';
+document.getElementById("minute").style.transform = 'rotate(' + minute + 'deg)';
+document.getElementById("second").style.transform = 'rotate(' + second + 'deg)';
+</script>
+</body></html>

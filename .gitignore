@@ -1,16 +1,36 @@
-# Cursor IDE - local config, not relevant for teammates
+# Cursor IDE — local config
 .cursorrules
 .cursor/
 
-# Python cache
+# Generated dataset files (keep dirs via .gitkeep)
+data/raw/digital/*
+!data/raw/digital/.gitkeep
+data/raw/analog/*
+!data/raw/analog/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/test_sample/*
+!data/test_sample/.gitkeep
+
+# Tracked explicitly: data/times_manifest.json, data/validation_sample.png
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
+.pytest_cache/
 
-# Virtual environment
+# Virtual environments
 venv/
+.venv/
 .env
 
-# OS files
+# Model checkpoints (large)
+models/checkpoints/*.pth
+models/checkpoints/*.pt
+
+# OS / editors
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/

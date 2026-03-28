@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#282c34;display:flex;align-items:center;justify-content:center;height:100vh;}
+.clock{position:relative;width:300px;height:300px;}
+.face{position:absolute;width:300px;height:300px;border-radius:50%;
+  background:#21252b;border:3px solid #e06c75;
+  box-shadow:0 4px 20px rgba(224,108,117,0.2);}
+.digital{position:absolute;bottom:72px;width:100%;text-align:center;
+  font:bold 13px monospace;color:#e06c75;z-index:6;letter-spacing:2px;}
+#hour,#minute,#second{position:absolute;bottom:50%;left:50%;
+  transform-origin:bottom center;border-radius:2px;z-index:5;}
+#hour  {width:7px; height:64px; background:#e5c07b;margin-left:-3.5px;}
+#minute{width:4px; height:94px; background:#98c379;margin-left:-2px;}
+#second{width:2px; height:104px;background:#e06c75;margin-left:-1px;}
+.dot{position:absolute;width:10px;height:10px;background:#e06c75;border-radius:50%;
+  top:50%;left:50%;transform:translate(-50%,-50%);z-index:10;}
+</style></head><body>
+<div class="clock">
+  <div class="face"><span style="position:absolute;left:201.0px;top:61.7px;transform:translate(-50%,-50%);font:300 12px Arial;color:#abb2bf;">1</span><span style="position:absolute;left:238.3px;top:99.0px;transform:translate(-50%,-50%);font:300 12px Arial;color:#abb2bf;">2</span><span style="position:absolute;left:252.0px;top:150.0px;transform:translate(-50%,-50%);font:300 12px Arial;color:#abb2bf;">3</span><span style="position:absolute;left:238.3px;top:201.0px;transform:translate(-50%,-50%);font:300 12px Arial;color:#abb2bf;">4</span><span style="position:absolute;left:201.0px;top:238.3px;transform:translate(-50%,-50%);font:300 12px Arial;color:#abb2bf;">5</span><span style="position:absolute;left:150.0px;top:252.0px;transform:translate(-50%,-50%);font:300 12px Arial;color:#abb2bf;">6</span><span style="position:absolute;left:99.0px;top:238.3px;transform:translate(-50%,-50%);font:300 12px Arial;color:#abb2bf;">7</span><span style="position:absolute;left:61.7px;top:201.0px;transform:translate(-50%,-50%);font:300 12px Arial;color:#abb2bf;">8</span><span style="position:absolute;left:48.0px;top:150.0px;transform:translate(-50%,-50%);font:300 12px Arial;color:#abb2bf;">9</span><span style="position:absolute;left:61.7px;top:99.0px;transform:translate(-50%,-50%);font:300 12px Arial;color:#abb2bf;">10</span><span style="position:absolute;left:99.0px;top:61.7px;transform:translate(-50%,-50%);font:300 12px Arial;color:#abb2bf;">11</span><span style="position:absolute;left:150.0px;top:48.0px;transform:translate(-50%,-50%);font:300 12px Arial;color:#abb2bf;">12</span></div>
+  <div class="digital" id="digi"></div>
+  <div id="hour"></div><div id="minute"></div><div id="second"></div>
+  <div class="dot"></div>
+</div>
+<script>
+
+const _p = new URLSearchParams(window.location.search);
+const H = parseInt(_p.get('h') || 0);
+const M = parseInt(_p.get('m') || 0);
+const S = parseInt(_p.get('s') || 0);
+var hour   = 360*(H/12);
+var minute = 360*(M/60);
+var second = 360*(S/60);
+document.getElementById("hour").style.transform   = 'rotate(' + hour   + 'deg)';
+document.getElementById("minute").style.transform = 'rotate(' + minute + 'deg)';
+document.getElementById("second").style.transform = 'rotate(' + second + 'deg)';
+
+const pad=n=>String(n).padStart(2,'0');
+document.getElementById('digi').textContent=pad(H)+':'+pad(M)+':'+pad(S);
+</script>
+</body></html>

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#f0a500;display:flex;align-items:center;justify-content:center;height:100vh;}
+.clock{position:relative;width:280px;height:280px;}
+.face{width:280px;height:280px;border-radius:50%;background:#e8824a;
+  box-shadow:inset 0 0 0 8px #c96a2e, 0 0 0 4px #b85c22, 0 8px 20px rgba(0,0,0,0.3);}
+/* leaf decoration */
+.leaf{position:absolute;top:-18px;left:50%;transform:translateX(-50%);
+  width:14px;height:22px;background:#6abf4b;border-radius:50% 50% 50% 0;transform-origin:bottom;}
+.stem{position:absolute;top:-6px;left:calc(50% + 6px);width:3px;height:18px;
+  background:#6abf4b;border-radius:2px;}
+/* numbers */
+.num{position:absolute;width:100%;height:100%;top:0;left:0;text-align:center;}
+.num span{display:inline-block;margin-top:10px;font:bold 13px Arial;color:rgba(255,255,255,0.7);}
+/* hands */
+.hand-wrap{position:absolute;width:100%;height:100%;top:0;left:0;}
+#hour,#minute,#second{position:absolute;bottom:50%;left:50%;
+  transform-origin:bottom center;border-radius:3px;}
+#hour  {width:7px; height:70px; background:#7a3318; margin-left:-3.5px;}
+#minute{width:5px; height:100px;background:#7a3318; margin-left:-2.5px;}
+#second{width:2px; height:110px;background:#fff;    margin-left:-1px;}
+.dot{position:absolute;width:12px;height:12px;background:#7a3318;border-radius:50%;
+  top:50%;left:50%;transform:translate(-50%,-50%);z-index:10;}
+</style></head><body>
+<div class="clock">
+  <div class="face"></div>
+  <div class="stem"></div><div class="leaf"></div>
+  <div class="hand-wrap">
+    <div id="hour"></div>
+    <div id="minute"></div>
+    <div id="second"></div>
+    <div class="dot"></div>
+  </div>
+</div>
+<script>
+const _p = new URLSearchParams(window.location.search);
+const H = parseInt(_p.get('h') || 0);
+const M = parseInt(_p.get('m') || 0);
+const S = parseInt(_p.get('s') || 0);
+var hour   = 360*(H/12);
+var minute = 360*(M/60);
+var second = 360*(S/60);
+document.getElementById("hour").style.transform   = 'rotate(' + hour   + 'deg)';
+document.getElementById("minute").style.transform = 'rotate(' + minute + 'deg)';
+document.getElementById("second").style.transform = 'rotate(' + second + 'deg)';
+</script>
+</body></html>
