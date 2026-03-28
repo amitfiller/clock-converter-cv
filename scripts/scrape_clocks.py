@@ -1,145 +1,189 @@
-"""Phase 1.1 - Selenium scraper for offline clock dataset generation."""
-
-import random
-import tempfile
-import time
-from io import BytesIO
+import json, pathlib, random, time
 from pathlib import Path
 
 from PIL import Image
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
+
+CLOCKS_DIR = pathlib.Path("src/clocks")
+OUT_DIGITAL = pathlib.Path("data/raw/digital")
+OUT_ANALOG = pathlib.Path("data/raw/analog")
+DIGITAL_HTML = CLOCKS_DIR / "digital_clock.html"
+SEED = 42
+
+ANALOG_STYLES = [
+    ("clock_01_orange.html", "orange"),
+    ("clock_02_wall.html", "wall"),
+    ("clock_03_design3.html", "design3"),
+    ("clock_04_watch.html", "watch"),
+    ("clock_05_atc_vintage.html", "atc"),
+    ("clock_06_sweet.html", "sweet"),
+    ("clock_07_vue_hybrid.html", "vue"),
+    ("clock_08_js30.html", "js30"),
+    ("clock_09_simple.html", "simple"),
+    ("clock_10_3d_dark.html", "3d"),
+]
+
+EDGE_CASES = list(dict.fromkeys([
+    # CATEGORY 1 — Cardinal angles (0° / 90° / 180° / 270°)
+    (12, 0, 0), (3, 0, 0), (6, 0, 0), (9, 0, 0),
+
+    # CATEGORY 2 — Intermediate: minute+second hand on every clock number
+    (1, 5, 5), (2, 10, 10), (4, 20, 20), (5, 25, 25),
+    (7, 35, 35), (8, 40, 40), (10, 50, 50), (11, 55, 55),
+
+    # CATEGORY 3 — Overlapping / near-overlapping hands
+    (1, 1, 1),      # near-total overlap of all 3 hands
+    (6, 30, 30),    # hour+minute+second close together
+    (9, 45, 45),    # minute == second
+    (3, 15, 15),    # minute == second at quarter
+    (12, 30, 0),    # MAX separation between hour and minute
+
+    # CATEGORY 4 — Non-round minutes/seconds (arbitrary angles)
+    (2, 13, 42), (4, 47, 18), (7, 9, 56),
+    (10, 22, 34), (5, 51, 7), (8, 38, 29),
+
+    # CATEGORY 5 — 24-hour format (tests digital reader for hours > 12)
+    (13, 15, 0), (15, 45, 30), (18, 0, 0),
+    (20, 20, 20), (22, 10, 5), (23, 59, 59), (0, 0, 0),
+
+    # BONUS — All 24 hour-transition moments
+    *[(h, 0, 0) for h in range(24)],
+
+    # BONUS — AM/PM boundary conditions
+    (0, 0, 1), (11, 59, 59), (12, 0, 1), (23, 59, 59),
+]))
 
 
-DIGITAL_HTML = """<!doctype html>
-<html lang="en"><head><meta charset="UTF-8"><title>Digital Clock</title>
-<style>
-body { margin: 0; width: 100vw; height: 100vh; display: grid; place-items: center; background: #000; }
-#clock { color: #00ff66; font: 700 52px/1.1 monospace; letter-spacing: 4px; white-space: nowrap; }
-</style></head>
-<body>
-  <div id="clock">00:00:00</div>
-  <script>
-  function pad(n) { return String(n).padStart(2, '0'); }
-  function set_time(h, m, s) {
-    document.getElementById('clock').textContent = pad(h) + ':' + pad(m) + ':' + pad(s);
-  }
-  </script>
-</body></html>"""
+def build_400_times(edge_cases, seed=SEED):
+    """Build list of 400 unique (h, m, s) tuples from edge cases then random fill."""
+    times = list(edge_cases[:400])
+    seen = set(times)
+    rng = random.Random(seed)
+    while len(times) < 400:
+        t = (rng.randint(0, 23), rng.randint(0, 59), rng.randint(0, 59))
+        if t not in seen:
+            times.append(t)
+            seen.add(t)
+    return times[:400]
 
 
-# יוצר רשימה אקראית של זמנים ייחודיים / Generate unique random time tuples.
-def generate_time_combinations(n=400):
-    all_times = [(h, m, s) for h in range(24) for m in range(60) for s in range(60)]
-    if n > len(all_times):
-        raise ValueError(f"Requested {n} times, but only {len(all_times)} are possible.")
-    return random.sample(all_times, n)
+def center_crop_300(path) -> None:
+    """Crop center 300x300 from a window screenshot."""
+    img = Image.open(str(path)).convert("RGB")
+    w, h = img.size
+    left = max((w - 300) // 2, 0)
+    top = max((h - 300) // 2, 0)
+    img.crop((left, top, left + 300, top + 300)).save(str(path))
 
 
-# מגדיר דרייבר כרום ב-headless / Configure headless Chrome Selenium driver.
-def setup_driver():
-    options = Options()
-    options.add_argument("--headless=new")
-    options.add_argument("--window-size=600,600")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--hide-scrollbars")
-    options.add_argument("--force-device-scale-factor=1")
-    service = Service(ChromeDriverManager().install())
-    return webdriver.Chrome(service=service, options=options)
+def crop_clock_from_page(driver, screenshot_path: Path) -> None:
+    """Crop around .clock bbox with safe padding, save 400x400."""
+    rect = driver.execute_script(
+        """
+        const el = document.querySelector('.clock');
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return {x: r.x, y: r.y, w: r.width, h: r.height, dpr: window.devicePixelRatio || 1};
+        """
+    )
+    img = Image.open(str(screenshot_path)).convert("RGB")
+    if not rect:
+        w, h = img.size
+        left = max((w - 400) // 2, 0)
+        top = max((h - 400) // 2, 0)
+        img.crop((left, top, left + 400, top + 400)).save(str(screenshot_path))
+        return
+    dpr = float(rect["dpr"])
+    cx = (float(rect["x"]) + float(rect["w"]) / 2.0) * dpr
+    cy = (float(rect["y"]) + float(rect["h"]) / 2.0) * dpr
+    side = max(float(rect["w"]), float(rect["h"])) * 1.30 * dpr
+    half = side / 2.0
+    left = max(int(cx - half), 0)
+    top = max(int(cy - half), 0)
+    right = min(int(cx + half), img.size[0])
+    bottom = min(int(cy + half), img.size[1])
+    cropped = img.crop((left, top, right, bottom))
+    cropped.resize((400, 400), resample=Image.Resampling.LANCZOS).save(
+        str(screenshot_path)
+    )
 
 
-# טוען HTML מקומי, מגדיר שעה, ושומר צילום מרכזי 300x300 / Set time via JS and save center crop screenshot.
-def capture_clock(driver, html_path, hour, minute, second, save_path):
-    driver.get(Path(html_path).resolve().as_uri())
-    driver.execute_script("set_time(arguments[0], arguments[1], arguments[2]);", hour, minute, second)
-    time.sleep(0.5)
-    png_data = driver.get_screenshot_as_png()
-    image = Image.open(BytesIO(png_data)).convert("RGB")
-    width, height = image.size
-    left = max((width - 300) // 2, 0)
-    top = max((height - 300) // 2, 0)
-    cropped = image.crop((left, top, left + 300, top + 300))
-    Path(save_path).parent.mkdir(parents=True, exist_ok=True)
-    cropped.save(save_path)
+def make_driver():
+    """Create headless Chrome with fixed 600x600 window."""
+    opts = Options()
+    opts.add_argument("--headless=new")
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--window-size=600,600")
+    opts.add_argument("--hide-scrollbars")
+    return webdriver.Chrome(options=opts)
 
 
-# מצייר שעון אנלוגי ב-Pillow ללא Selenium / Draw analog clock with Pillow only.
-def draw_analog_clock(h, m, s, size=300):
-    from PIL import Image, ImageDraw
-    import math
-
-    img = Image.new('RGB', (size, size), 'white')
-    draw = ImageDraw.Draw(img)
-    cx, cy = size // 2, size // 2
-    r = int(size * 0.44)  # clock radius with padding
-
-    # Clock border circle
-    draw.ellipse([cx-r, cy-r, cx+r, cy+r], outline='black', width=6)
-
-    # Tick marks for 12/3/6/9
-    for angle_deg in [0, 90, 180, 270]:
-        angle = math.radians(angle_deg)
-        x1 = cx + int((r-18) * math.sin(angle))
-        y1 = cy - int((r-18) * math.cos(angle))
-        x2 = cx + int(r * math.sin(angle))
-        y2 = cy - int(r * math.cos(angle))
-        draw.line([x1, y1, x2, y2], fill='black', width=5)
-
-    # Hour hand
-    hour_angle = math.radians((h % 12) * 30 + m * 0.5)
-    hx = cx + int(r * 0.5 * math.sin(hour_angle))
-    hy = cy - int(r * 0.5 * math.cos(hour_angle))
-    draw.line([cx, cy, hx, hy], fill='#111111', width=8)
-
-    # Minute hand
-    min_angle = math.radians(m * 6 + s * 0.1)
-    mx2 = cx + int(r * 0.75 * math.sin(min_angle))
-    my2 = cy - int(r * 0.75 * math.cos(min_angle))
-    draw.line([cx, cy, mx2, my2], fill='#333333', width=5)
-
-    # Second hand
-    sec_angle = math.radians(s * 6)
-    sx2 = cx + int(r * 0.82 * math.sin(sec_angle))
-    sy2 = cy - int(r * 0.82 * math.cos(sec_angle))
-    draw.line([cx, cy, sx2, sy2], fill='#cc0000', width=2)
-
-    # Center dot
-    draw.ellipse([cx-6, cy-6, cx+6, cy+6], fill='black')
-
-    return img
+def shot(driver, url, path, style_label=None):
+    """Load URL, screenshot; digital gets center 300², analog gets .clock crop 400²."""
+    is_digital = "digital_clock.html" in str(url)
+    wait = 0.1 if is_digital else 0.3
+    driver.get(url)
+    time.sleep(wait)
+    if is_digital:
+        driver.save_screenshot(str(path))
+        center_crop_300(path)
+        return
+    _ = style_label
+    driver.save_screenshot(str(path))
+    crop_clock_from_page(driver, pathlib.Path(path))
 
 
-# מפעיל את כל תהליך יצירת הדאטה / Orchestrate full screenshot generation pipeline.
-def main():
-    random.seed(42)
-    times = generate_time_combinations(n=400)
-    base_dir = Path(__file__).resolve().parents[1]
-    digital_dir = base_dir / "data" / "raw" / "digital"
-    analog_dir = base_dir / "data" / "raw" / "analog"
-    digital_dir.mkdir(parents=True, exist_ok=True)
-    analog_dir.mkdir(parents=True, exist_ok=True)
-    for old_file in digital_dir.glob("*.png"):
-        old_file.unlink()
-    for old_file in analog_dir.glob("*.png"):
-        old_file.unlink()
-    with tempfile.TemporaryDirectory() as tmp:
-        digital_html = Path(tmp) / "digital_clock.html"
-        digital_html.write_text(DIGITAL_HTML, encoding="utf-8")
-        driver = setup_driver()
-        try:
-            for idx, (h, m, s) in enumerate(times, start=1):
-                stamp = f"{h:02d}_{m:02d}_{s:02d}"
-                capture_clock(driver, digital_html, h, m, s, digital_dir / f"digital_{stamp}.png")
-                analog_img = draw_analog_clock(h, m, s)
-                analog_img.save(analog_dir / f"analog_{stamp}.png")
-                if idx % 50 == 0:
-                    print(f"Progress: {idx}/400 time combinations captured.")
-        finally:
-            driver.quit()
-    print("Done: created 400 digital + 400 analog screenshots.")
+def furl(p):
+    """Build file:// URL for a local path."""
+    return "file://" + str(pathlib.Path(p).resolve())
 
 
 if __name__ == "__main__":
-    main()
+    OUT_DIGITAL.mkdir(parents=True, exist_ok=True)
+    OUT_ANALOG.mkdir(parents=True, exist_ok=True)
+
+    times = build_400_times(EDGE_CASES)
+    n_edge = min(len(EDGE_CASES), 400)
+    print(f"Times: 400 | Edge cases: {n_edge} | Random fill: {400 - n_edge}")
+    print(f"Expected output: 400 digital + {400 * len(ANALOG_STYLES)} analog\n")
+
+    pathlib.Path("data").mkdir(exist_ok=True)
+    with open("data/times_manifest.json", "w") as f:
+        json.dump(
+            [
+                {"h": h, "m": m, "s": s, "is_edge": i < n_edge}
+                for i, (h, m, s) in enumerate(times)
+            ],
+            f,
+            indent=2,
+        )
+
+    driver = make_driver()
+    try:
+        for idx, (h, m, s) in enumerate(times, 1):
+            tag = f"{h:02d}_{m:02d}_{s:02d}"
+
+            dp = OUT_DIGITAL / f"digital_{tag}.png"
+            if not dp.exists():
+                shot(driver, f"{furl(DIGITAL_HTML)}?h={h}&m={m}&s={s}", dp)
+
+            for style_file, style_label in ANALOG_STYLES:
+                ap = OUT_ANALOG / f"analog_{tag}_{style_label}.png"
+                if not ap.exists():
+                    shot(
+                        driver,
+                        f"{furl(CLOCKS_DIR / style_file)}?h={h}&m={m}&s={s}",
+                        ap,
+                        style_label=style_label,
+                    )
+
+            if idx % 50 == 0 or idx == 400:
+                print(f"  [{idx:>3}/400] {h:02d}:{m:02d}:{s:02d}")
+
+        d = len(list(OUT_DIGITAL.glob("*.png")))
+        a = len(list(OUT_ANALOG.glob("*.png")))
+        print(f"\n✓ DONE — Digital: {d}  Analog: {a}  Total: {d + a}")
+    finally:
+        driver.quit()

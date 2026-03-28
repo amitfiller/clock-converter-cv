@@ -15,14 +15,32 @@ from torchvision import transforms
 class ClockDataset(Dataset):
     """Load paired clock images with split by timestamps."""
 
-    def __init__(self, root_dir: str = "data/raw", mode: str = "train") -> None:
+    STYLE_LABELS = [
+        "orange",
+        "wall",
+        "design3",
+        "watch",
+        "atc",
+        "sweet",
+        "vue",
+        "js30",
+        "simple",
+        "3d",
+    ]
+
+    def __init__(self, root_dir: str = "data", mode: str = "train") -> None:
         """Init dataset with deterministic train/val split."""
         if mode not in {"train", "val"}:
             raise ValueError("mode must be 'train' or 'val'")
         self.root_dir = Path(root_dir)
         self.mode = mode
-        self.digital_dir = self.root_dir / "digital"
-        self.analog_dir = self.root_dir / "analog"
+        default_root = Path("data").resolve()
+        if self.root_dir.resolve() == default_root:
+            self.digital_dir = Path("data/raw/digital")
+            self.analog_dir = Path("data/raw/analog")
+        else:
+            self.digital_dir = self.root_dir / "digital"
+            self.analog_dir = self.root_dir / "analog"
         self._pattern = re.compile(r"^digital_(\d{2})_(\d{2})_(\d{2})\.png$")
 
         self.all_samples = self._collect_paired_samples()
@@ -42,9 +60,13 @@ class ClockDataset(Dataset):
             if not match:
                 continue
             hour, minute, second = map(int, match.groups())
-            analog_name = f"analog_{hour:02d}_{minute:02d}_{second:02d}.png"
-            analog_path = self.analog_dir / analog_name
-            if analog_path.exists():
+            stamp = f"{hour:02d}_{minute:02d}_{second:02d}"
+            analog_candidates = [
+                self.analog_dir / f"analog_{stamp}_{self.STYLE_LABELS[0]}.png",
+                self.analog_dir / f"analog_{stamp}.png",
+            ]
+            analog_path = next((p for p in analog_candidates if p.exists()), None)
+            if analog_path is not None:
                 samples.append(
                     {
                         "digital_path": file_path,
@@ -91,9 +113,18 @@ class ClockDataset(Dataset):
     def __getitem__(self, idx: int):
         """Return digital tensor, time label tuple, and analog tensor."""
         sample = self.samples[idx]
+        hour, minute, second = sample["label"]
+        tag = f"{hour:02d}_{minute:02d}_{second:02d}"
         with Image.open(sample["digital_path"]) as digital_img:
             digital_tensor = self.digital_transform(digital_img.convert("RGB"))
-        with Image.open(sample["analog_path"]) as analog_img:
+        if self.mode == "train":
+            style = random.choice(self.STYLE_LABELS)
+        else:
+            style = self.STYLE_LABELS[0]
+        analog_path = self.analog_dir / f"analog_{tag}_{style}.png"
+        if not analog_path.exists():
+            analog_path = sample["analog_path"]
+        with Image.open(analog_path) as analog_img:
             analog_tensor = self.analog_transform(analog_img.convert("RGB"))
         return digital_tensor, sample["label"], analog_tensor
 
