@@ -5,11 +5,41 @@ from __future__ import annotations
 import random
 import re
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms
+
+_IMAGENET_MEAN = (0.485, 0.456, 0.406)
+_IMAGENET_STD = (0.229, 0.224, 0.225)
+
+
+def _digital_train_transform() -> transforms.Compose:
+    """Augmented pipeline for training digital crops (ImageNet normalize)."""
+    return transforms.Compose(
+        [
+            transforms.Resize((224, 224)),
+            transforms.ColorJitter(
+                brightness=0.3, contrast=0.3, saturation=0.2
+            ),
+            transforms.RandomRotation(degrees=5),
+            transforms.RandomAffine(degrees=0, translate=(0.05, 0.05)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=_IMAGENET_MEAN, std=_IMAGENET_STD),
+        ]
+    )
+
+
+def _digital_val_transform() -> transforms.Compose:
+    """Deterministic pipeline for validation digital crops."""
+    return transforms.Compose(
+        [
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=_IMAGENET_MEAN, std=_IMAGENET_STD),
+        ]
+    )
 
 
 class ClockDataset(Dataset):
@@ -28,8 +58,13 @@ class ClockDataset(Dataset):
         "3d",
     ]
 
-    def __init__(self, root_dir: str = "data", mode: str = "train") -> None:
-        """Init dataset with deterministic train/val split."""
+    def __init__(
+        self,
+        root_dir: str = "data",
+        mode: str = "train",
+        digital_transform: Optional[Callable] = None,
+    ) -> None:
+        """Init dataset; optional digital_transform overrides train/val pipes."""
         if mode not in {"train", "val"}:
             raise ValueError("mode must be 'train' or 'val'")
         self.root_dir = Path(root_dir)
@@ -47,7 +82,14 @@ class ClockDataset(Dataset):
         self.train_samples, self.val_samples = self._split_samples(self.all_samples)
         self.samples = self.train_samples if mode == "train" else self.val_samples
 
-        self.digital_transform = self._build_digital_transform(mode)
+        if digital_transform is not None:
+            self.digital_transform = digital_transform
+        else:
+            self.digital_transform = (
+                _digital_train_transform()
+                if mode == "train"
+                else _digital_val_transform()
+            )
         self.analog_transform = transforms.Compose(
             [transforms.Resize((64, 64)), transforms.ToTensor()]
         )
@@ -85,26 +127,6 @@ class ClockDataset(Dataset):
         rng.shuffle(shuffled)
         split_idx = int(0.8 * len(shuffled))
         return shuffled[:split_idx], shuffled[split_idx:]
-
-    def _build_digital_transform(self, mode: str) -> transforms.Compose:
-        """Create digital transform pipeline for selected mode."""
-        items = [transforms.Resize((64, 64))]
-        if mode == "train":
-            items.extend(
-                [
-                    transforms.ColorJitter(brightness=0.3, contrast=0.3),
-                    transforms.GaussianBlur(kernel_size=3),
-                    transforms.RandomRotation(degrees=5),
-                ]
-            )
-        items.extend(
-            [
-                transforms.Grayscale(num_output_channels=1),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.5], std=[0.5]),
-            ]
-        )
-        return transforms.Compose(items)
 
     def __len__(self) -> int:
         """Return number of samples in selected mode."""

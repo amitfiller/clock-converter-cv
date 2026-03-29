@@ -4,8 +4,8 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-from torch.optim import Adam
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 
 try:
@@ -17,14 +17,14 @@ except ModuleNotFoundError:
 
 
 def unpack_batch(batch):
-    """Extract digital tensor and label tuple; ignore analog."""
+    """Extract digital tensor and labels; hour is raw 0–23."""
     digital_tensor, labels, _analog_tensor = batch
     hour, minute, second = labels
     return digital_tensor, hour.long(), minute.long(), second.long()
 
 
 def batch_full_match(hour_logits, minute_logits, second_logits, targets):
-    """Check strict full-time match for each sample."""
+    """Check strict full-time match for each sample (24h hour)."""
     hour_t, minute_t, second_t = targets
     hour_ok = hour_logits.argmax(dim=1).eq(hour_t)
     minute_ok = minute_logits.argmax(dim=1).eq(minute_t)
@@ -108,8 +108,13 @@ def save_model(model, save_path):
     torch.save(model.state_dict(), save_path)
 
 
+def _current_lr(optimizer):
+    """Return LR from the first param group (after scheduler updates)."""
+    return optimizer.param_groups[0]["lr"]
+
+
 def main():
-    """Run Module A training with scheduler and best-checkpoint saving."""
+    """Train with AdamW, cosine LR, label smoothing, early stopping on full-acc."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     project_root = Path(__file__).resolve().parents[1]
     data_root = project_root / "data" / "raw"
@@ -119,39 +124,50 @@ def main():
     val_loader = DataLoader(val_ds, batch_size=32, shuffle=False)
 
     model = DigitalReader().to(device)
-    optimizer = Adam(model.parameters(), lr=1e-3)
-    criterion = nn.CrossEntropyLoss()
-    scheduler = ReduceLROnPlateau(
-        optimizer, mode="min", factor=0.5, patience=10
+    optimizer = AdamW(model.parameters(), lr=1e-4, weight_decay=1e-4)
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+    scheduler = CosineAnnealingLR(optimizer, T_max=100, eta_min=1e-6)
+    save_path = (
+        project_root / "models" / "checkpoints" / "digital_reader_best.pth"
     )
-    save_path = project_root / "models" / "digital_reader.pth"
     best_val_acc = -1.0
-    max_epochs = 150
+    epochs_no_improve = 0
+    patience = 30
+    max_epochs = 500
 
     for epoch in range(1, max_epochs + 1):
         avg_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
         val_loss, h_acc, m_acc, s_acc, full_acc = evaluate(
             model, val_loader, device, criterion
         )
-        old_lrs = [g["lr"] for g in optimizer.param_groups]
-        scheduler.step(val_loss)
-        new_lrs = [g["lr"] for g in optimizer.param_groups]
-        if new_lrs != old_lrs:
-            print(f"  LR reduced: {old_lrs[0]:.2e} -> {new_lrs[0]:.2e}", flush=True)
+        scheduler.step()
+        lr = _current_lr(optimizer)
+        loss = avg_loss
+        acc_h = h_acc * 100
+        acc_m = m_acc * 100
+        acc_s = s_acc * 100
+        acc_full = full_acc * 100
         print(
-            f"Epoch {epoch:02d} | Loss: {avg_loss:.4f} | "
-            f"H: {h_acc:.2f} | M: {m_acc:.2f} | S: {s_acc:.2f} | "
-            f"Full: {full_acc:.4f}",
+            f"Epoch {epoch:02d} | Loss: {loss:.4f} | "
+            f"H: {acc_h:.2f}% | M: {acc_m:.2f}% | S: {acc_s:.2f}% | "
+            f"Full: {acc_full:.2f}% | LR: {lr:.2e}",
             flush=True,
         )
         if full_acc > best_val_acc:
             best_val_acc = full_acc
+            epochs_no_improve = 0
+            save_path.parent.mkdir(parents=True, exist_ok=True)
             save_model(model, save_path)
-        if full_acc >= 0.95:
-            print("✅ Target reached! Model saved.")
-            return
+        else:
+            epochs_no_improve += 1
+        if epochs_no_improve >= patience:
+            print(
+                f"Early stop: no val full-acc gain for {patience} epochs.",
+                flush=True,
+            )
+            break
 
-    print(f"Training done after {max_epochs} epochs. Best val full-acc: {best_val_acc:.4f}")
+    print(f"Done. Best val full-acc: {best_val_acc:.4f}", flush=True)
 
 
 if __name__ == "__main__":

@@ -2,47 +2,32 @@
 
 import torch
 import torch.nn as nn
+from torchvision.models import resnet18, ResNet18_Weights
 
 
 class DigitalReader(nn.Module):
-    """Read digital clock image and predict h/m/s logits."""
+    """Read digital clock image; predict 24h hour, minute, second logits."""
 
     def __init__(self) -> None:
-        """Build conv encoder, shared neck, and 3 heads."""
+        """ResNet18 backbone, dropout, three heads (24 / 60 / 60 classes)."""
         super().__init__()
-        self.features = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2, 2),
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2, 2),
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2, 2),
-        )
-        self.neck = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(128 * 8 * 8, 512),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(512, 256),
-            nn.ReLU(),
-        )
-        self.hour_head = nn.Linear(256, 24)
-        self.minute_head = nn.Linear(256, 60)
-        self.second_head = nn.Linear(256, 60)
+        weights = ResNet18_Weights.DEFAULT
+        backbone_model = resnet18(weights=weights)
+        self.backbone = nn.Sequential(*list(backbone_model.children())[:-1])
+        self.dropout = nn.Dropout(p=0.3)
+        self.head_h = nn.Linear(512, 24)
+        self.head_m = nn.Linear(512, 60)
+        self.head_s = nn.Linear(512, 60)
 
     def forward(self, x: torch.Tensor):
-        """Return raw logits for hour, minute, and second."""
-        embedding = self.neck(self.features(x))
-        hour_logits = self.hour_head(embedding)
-        minute_logits = self.minute_head(embedding)
-        second_logits = self.second_head(embedding)
-        return hour_logits, minute_logits, second_logits
+        """Return logits (out_h, out_m, out_s) for hour 0–23, min, sec."""
+        feats = self.backbone(x)
+        feats = torch.flatten(feats, 1)
+        feats = self.dropout(feats)
+        return self.head_h(feats), self.head_m(feats), self.head_s(feats)
 
     def predict(self, x: torch.Tensor):
-        """Return integer predictions by argmax from logits."""
+        """Return integer predictions by argmax (hour 0–23, min, sec)."""
         self.eval()
         with torch.no_grad():
             hour_logits, minute_logits, second_logits = self.forward(x)

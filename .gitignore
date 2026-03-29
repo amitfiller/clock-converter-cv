@@ -16,16 +16,18 @@ data/test_sample/*
 
 # Python
 __pycache__/
+*/__pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
 
-# Virtual environments
+# Python venv
 venv/
+.env/
 .venv/
 .env
 
-# Model checkpoints (large)
+# PyTorch checkpoints
 models/checkpoints/*.pth
 models/checkpoints/*.pt
 
