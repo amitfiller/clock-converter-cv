@@ -27,9 +27,10 @@ venv/
 .venv/
 .env
 
-# PyTorch checkpoints
+# PyTorch checkpoints (ignore all; track only Module A best weights)
 models/checkpoints/*.pth
 models/checkpoints/*.pt
+!models/checkpoints/digital_reader_best.pth
 
 # OS / editors
 .DS_Store
