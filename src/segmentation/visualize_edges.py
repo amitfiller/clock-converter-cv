@@ -26,7 +26,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        help="Path to save the hand image. Defaults to demo_outputs/segmentation/<name>_hands.png.",
+        help=(
+            "Base output path or filename stem. Saves both <name>_edges.png and "
+            "<name>_hands.png in demo_outputs/segmentation by default."
+        ),
     )
     parser.add_argument(
         "--show",
@@ -45,11 +48,20 @@ def find_default_image() -> Path:
     return images[0]
 
 
-def build_output_path(image_path: Path, output_path: Path | None) -> Path:
-    if output_path is not None:
-        return output_path
+def build_output_paths(image_path: Path, output_path: Path | None) -> tuple[Path, Path]:
+    if output_path is None:
+        output_dir = DEFAULT_OUTPUT_DIR
+        base_name = image_path.stem
+    else:
+        output_dir = output_path.parent if output_path.parent != Path("") else DEFAULT_OUTPUT_DIR
+        base_name = output_path.stem
+
     DEFAULT_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    return DEFAULT_OUTPUT_DIR / f"{image_path.stem}_hands.png"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return (
+        output_dir / f"{base_name}_edges.png",
+        output_dir / f"{base_name}_hands.png",
+    )
 
 
 def point_distance(point_a: tuple[float, float], point_b: tuple[float, float]) -> float:
@@ -206,8 +218,7 @@ def render_lines(shape: tuple[int, int, int], lines: list[tuple[int, int, int, i
 def main() -> None:
     args = parse_args()
     image_path = args.input or find_default_image()
-    output_path = build_output_path(image_path, args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    edges_output_path, hands_output_path = build_output_paths(image_path, args.output)
 
     image = cv2.imread(str(image_path))
     if image is None:
@@ -218,8 +229,10 @@ def main() -> None:
 
     if not hand_lines:
         raise RuntimeError("No clock-hand lines were detected in the image.")
-    if not cv2.imwrite(str(output_path), result):
-        raise RuntimeError(f"Failed to save hand image to {output_path}")
+    if not cv2.imwrite(str(edges_output_path), edges):
+        raise RuntimeError(f"Failed to save edge image to {edges_output_path}")
+    if not cv2.imwrite(str(hands_output_path), result):
+        raise RuntimeError(f"Failed to save hand image to {hands_output_path}")
 
     print(f"Input image: {image_path}")
     print("1. Converted the image to grayscale and blurred it slightly to stabilize the edges.")
@@ -227,9 +240,11 @@ def main() -> None:
     print("3. Used Hough Line Transform to find straight-line candidates in the edge map.")
     print("4. Filtered out short lines and lines that do not pass near the clock center.")
     print("5. Kept the two strongest line candidates as the clock hands.")
-    print(f"Saved hand-only image: {output_path}")
+    print(f"Saved edge image: {edges_output_path}")
+    print(f"Saved hand-only image: {hands_output_path}")
 
     if args.show:
+        cv2.imshow("Edge Map", edges)
         cv2.imshow("Detected Clock Hands", result)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
