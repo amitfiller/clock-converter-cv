@@ -1,0 +1,1 @@
+"""Utilities for analog clock hand segmentation experiments."""

@@ -4,12 +4,16 @@ from pathlib import Path
 from PIL import Image
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
 
 CLOCKS_DIR = pathlib.Path("src/clocks")
 OUT_DIGITAL = pathlib.Path("data/raw/digital")
 OUT_ANALOG = pathlib.Path("data/raw/analog")
 DIGITAL_HTML = CLOCKS_DIR / "digital_clock.html"
 SEED = 42
+WINDOW_WIDTH = 800
+WINDOW_HEIGHT = 600
 
 ANALOG_STYLES = [
     ("clock_01_orange.html", "orange"),
@@ -68,15 +72,6 @@ def build_400_times(edge_cases, seed=SEED):
     return times[:400]
 
 
-def center_crop_300(path) -> None:
-    """Crop center 300x300 from a window screenshot."""
-    img = Image.open(str(path)).convert("RGB")
-    w, h = img.size
-    left = max((w - 300) // 2, 0)
-    top = max((h - 300) // 2, 0)
-    img.crop((left, top, left + 300, top + 300)).save(str(path))
-
-
 def crop_clock_from_page(driver, screenshot_path: Path) -> None:
     """Crop around .clock bbox with safe padding, save 400x400."""
     rect = driver.execute_script(
@@ -109,26 +104,50 @@ def crop_clock_from_page(driver, screenshot_path: Path) -> None:
     )
 
 
+def capture_digital_clock(driver, screenshot_path: Path) -> None:
+    """Capture the padded digital clock container after forcing a centered layout."""
+    driver.set_window_size(WINDOW_WIDTH, WINDOW_HEIGHT)
+    container = WebDriverWait(driver, 5).until(
+        lambda d: d.find_element(By.ID, "clock-capture")
+    )
+    driver.execute_script(
+        """
+        const el = arguments[0];
+        document.documentElement.style.width = '100%';
+        document.documentElement.style.height = '100%';
+        document.body.style.width = '100%';
+        document.body.style.height = '100%';
+        document.body.style.margin = '0';
+        document.body.style.display = 'grid';
+        document.body.style.placeItems = 'center';
+        el.scrollIntoView({block: 'center', inline: 'center'});
+        """,
+        container,
+    )
+    time.sleep(0.05)
+    container.screenshot(str(screenshot_path))
+
+
 def make_driver():
-    """Create headless Chrome with fixed 600x600 window."""
+    """Create headless Chrome with a fixed window size."""
     opts = Options()
     opts.add_argument("--headless=new")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
-    opts.add_argument("--window-size=600,600")
+    opts.add_argument(f"--window-size={WINDOW_WIDTH},{WINDOW_HEIGHT}")
     opts.add_argument("--hide-scrollbars")
     return webdriver.Chrome(options=opts)
 
 
 def shot(driver, url, path, style_label=None):
-    """Load URL, screenshot; digital gets center 300², analog gets .clock crop 400²."""
+    """Load URL and capture a stable image for each clock style."""
     is_digital = "digital_clock.html" in str(url)
     wait = 0.1 if is_digital else 0.3
+    driver.set_window_size(WINDOW_WIDTH, WINDOW_HEIGHT)
     driver.get(url)
     time.sleep(wait)
     if is_digital:
-        driver.save_screenshot(str(path))
-        center_crop_300(path)
+        capture_digital_clock(driver, pathlib.Path(path))
         return
     _ = style_label
     driver.save_screenshot(str(path))

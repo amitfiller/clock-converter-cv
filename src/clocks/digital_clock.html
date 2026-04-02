@@ -16,6 +16,15 @@
         display: grid;
         place-items: center;
       }
+      #clock-capture {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 360px;
+        min-height: 128px;
+        padding: 24px 32px;
+        box-sizing: border-box;
+      }
       #clock {
         font-family: "Courier New", monospace;
         font-size: 68px;
@@ -27,7 +36,9 @@
     </style>
   </head>
   <body>
-    <div id="clock">00:00:00</div>
+    <div id="clock-capture">
+      <div id="clock">00:00:00</div>
+    </div>
     <script>
       const _p = new URLSearchParams(window.location.search);
       const H = parseInt(_p.get('h') || 0);
