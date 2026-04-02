@@ -1,6 +1,6 @@
 # Module A — Digital Clock Reader (Technical Summary)
 
-This document summarizes the **Digital Clock Reader** (Module A): architecture, data pipeline, training configuration, recorded results, and key design decisions. It reflects the current implementation in `src/models/digital_reader.py`, `src/data/dataset.py`, and `src/train_module_a.py`.
+This document summarizes the **Digital Clock Reader** (Module A): architecture, data pipeline, training configuration, recorded results, and key design decisions. It reflects the current implementation in `src/models/digital_reader.py`, `src/data/dataset.py`, and `src/module_a/train.py`.
 
 **Checkpoint:** `models/checkpoints/digital_reader_best.pth` — **present** on disk (verified).
 

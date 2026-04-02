@@ -1,3 +1,5 @@
+"""Load checkpoint and predict HH:MM:SS from one digital clock image."""
+
 import torch
 from torchvision import transforms
 from PIL import Image
@@ -15,6 +17,7 @@ DIGITAL_TRANSFORM = transforms.Compose([
 ])
 
 def load_model(checkpoint_path: str = "models/checkpoints/digital_reader_best.pth") -> DigitalReader:
+    """Load DigitalReader weights from disk into eval mode."""
     model = DigitalReader().to(DEVICE)
     state = torch.load(checkpoint_path, map_location=DEVICE)
     model.load_state_dict(state)
@@ -23,6 +26,7 @@ def load_model(checkpoint_path: str = "models/checkpoints/digital_reader_best.pt
 
 @torch.no_grad()
 def predict_time_from_image(path: str, model: DigitalReader = None):
+    """Return predicted (hour, minute, second) for one RGB image path."""
     if model is None:
         model = load_model()
     img = Image.open(path).convert("RGB")
@@ -36,7 +40,7 @@ def predict_time_from_image(path: str, model: DigitalReader = None):
 if __name__ == "__main__":
     import sys
     if len(sys.argv) != 2:
-        print("Usage: python -m src.predict_digital_time <path_to_image>")
+        print("Usage: python -m src.module_a.predict <path_to_image>")
         sys.exit(1)
     img_path = sys.argv[1]
     model = load_model()

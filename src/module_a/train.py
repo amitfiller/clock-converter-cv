@@ -8,12 +8,8 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 
-try:
-    from data.dataset import ClockDataset
-    from models.digital_reader import DigitalReader
-except ModuleNotFoundError:
-    from src.data.dataset import ClockDataset
-    from src.models.digital_reader import DigitalReader
+from src.data.dataset import ClockDataset
+from src.models.digital_reader import DigitalReader
 
 
 def unpack_batch(batch):
@@ -116,7 +112,7 @@ def _current_lr(optimizer):
 def main():
     """Train with AdamW, cosine LR, label smoothing, early stopping on full-acc."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    project_root = Path(__file__).resolve().parents[1]
+    project_root = Path(__file__).resolve().parents[2]
     data_root = project_root / "data" / "raw"
     train_ds = ClockDataset(root_dir=str(data_root), mode="train")
     val_ds = ClockDataset(root_dir=str(data_root), mode="val")

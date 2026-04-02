@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 
 from src.data.dataset import ClockDataset
 from src.models.digital_reader import DigitalReader
-from src.train_module_a import batch_full_match, unpack_batch
+from src.module_a.train import batch_full_match, unpack_batch
 
 
 def _accumulate_batch(model, batch, device):

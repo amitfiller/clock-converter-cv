@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from src.models.digital_reader import DigitalReader
-from src.predict_digital_time import load_model, predict_time_from_image
+from src.module_a.predict import load_model, predict_time_from_image
 
 _cached_model: DigitalReader | None = None
 
