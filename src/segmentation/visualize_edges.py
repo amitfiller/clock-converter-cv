@@ -107,6 +107,66 @@ def ray_angle(center: tuple[float, float], tip: tuple[int, int]) -> float:
     return (angle + 180.0) % 180.0
 
 
+def clip_tip_to_dial(
+    center: tuple[float, float], tip: tuple[int, int], max_radius: float
+) -> tuple[int, int]:
+    """Clamp tip onto dial so Hough segments cannot extend to the image border."""
+    dx = float(tip[0] - center[0])
+    dy = float(tip[1] - center[1])
+    dist = math.hypot(dx, dy)
+    if dist < 1e-3:
+        return int(round(center[0])), int(round(center[1]))
+    if dist <= max_radius:
+        return tip[0], tip[1]
+    scale = max_radius / dist
+    return (
+        int(round(center[0] + dx * scale)),
+        int(round(center[1] + dy * scale)),
+    )
+
+
+def _best_hand_pair(
+    clipped: list[tuple[float, float, tuple[int, int]]],
+) -> tuple[tuple[int, int], tuple[int, int]]:
+    """Return two dial-clipped tips maximizing score; prefer angle gap >= 18°."""
+    sep: list[tuple[float, tuple[int, int], tuple[int, int]]] = []
+    all_p: list[tuple[float, tuple[int, int], tuple[int, int]]] = []
+    for i in range(len(clipped)):
+        for j in range(i + 1, len(clipped)):
+            sc_i, ang_i, tip_i = clipped[i]
+            sc_j, ang_j, tip_j = clipped[j]
+            agap = angle_gap(ang_i, ang_j)
+            ssum = sc_i + sc_j
+            entry = (ssum, tip_i, tip_j)
+            all_p.append(entry)
+            if agap >= 18.0:
+                sep.append(entry)
+    pool = sep if sep else all_p
+    best = max(pool, key=lambda x: x[0])
+    return best[1], best[2]
+
+
+def pick_two_hand_lines(
+    unique_candidates: list[tuple[float, float, tuple[int, int]]],
+    center: tuple[float, float],
+    clock_radius: float,
+) -> list[tuple[int, int, int, int]]:
+    """Choose two rays; clip to dial; prefer well-separated angles when possible."""
+    max_r = clock_radius * 0.92
+    cx, cy = int(round(center[0])), int(round(center[1]))
+    clipped = [
+        (sc, ang, clip_tip_to_dial(center, tip, max_r))
+        for sc, ang, tip in unique_candidates[:28]
+    ]
+    if not clipped:
+        return []
+    if len(clipped) == 1:
+        t = clipped[0][2]
+        return [(cx, cy, t[0], t[1])]
+    a, b = _best_hand_pair(clipped)
+    return [(cx, cy, a[0], a[1]), (cx, cy, b[0], b[1])]
+
+
 def detect_hand_lines(image: np.ndarray) -> tuple[np.ndarray, list[tuple[int, int, int, int]]]:
     grayscale = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(grayscale, (5, 5), 0)
@@ -181,26 +241,19 @@ def detect_hand_lines(image: np.ndarray) -> tuple[np.ndarray, list[tuple[int, in
 
     unique_candidates.sort(key=lambda item: item[0], reverse=True)
 
-    selected: list[tuple[int, int, int, int]] = []
-    selected_meta: list[tuple[float, float]] = []
-    center_point = (int(round(center[0])), int(round(center[1])))
-    for _, angle, tip in unique_candidates:
-        tip_length = point_distance(tip, center)
-        if any(
-            angle_gap(angle, kept_angle) < 8.0 and abs(tip_length - kept_length) < clock_radius * 0.14
-            for kept_angle, kept_length in selected_meta
-        ):
-            continue
-        selected.append((center_point[0], center_point[1], tip[0], tip[1]))
-        selected_meta.append((angle, tip_length))
-        if len(selected) == 2:
-            break
+    selected = pick_two_hand_lines(unique_candidates, center, clock_radius)
 
     if len(selected) < 2:
-        selected = [
-            (center_point[0], center_point[1], tip[0], tip[1])
-            for _, _, tip in unique_candidates[:2]
+        center_point = (int(round(center[0])), int(round(center[1])))
+        max_r = clock_radius * 0.92
+        tips = [
+            clip_tip_to_dial(center, tip, max_r) for _, _, tip in unique_candidates[:2]
         ]
+        if len(tips) == 1:
+            tips.append(tips[0])
+        if not tips:
+            return edges, []
+        selected = [(center_point[0], center_point[1], t[0], t[1]) for t in tips[:2]]
 
     return edges, selected
 
@@ -239,7 +292,9 @@ def main() -> None:
     print("2. Ran Canny edge detection to keep only strong intensity changes.")
     print("3. Used Hough Line Transform to find straight-line candidates in the edge map.")
     print("4. Filtered out short lines and lines that do not pass near the clock center.")
-    print("5. Kept the two strongest line candidates as the clock hands.")
+    print(
+        "5. Picked two hand rays (preferring separated angles), clipped to dial radius."
+    )
     print(f"Saved edge image: {edges_output_path}")
     print(f"Saved hand-only image: {hands_output_path}")
 
