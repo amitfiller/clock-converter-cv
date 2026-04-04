@@ -14,6 +14,12 @@ data/test_sample/*
 
 # Tracked explicitly: data/times_manifest.json, data/validation_sample.png
 
+# Generated demo and debugging outputs (keep dirs via .gitkeep)
+demo_outputs/**
+!demo_outputs/
+!demo_outputs/**/
+!demo_outputs/**/.gitkeep
+
 # Python
 __pycache__/
 */__pycache__/
