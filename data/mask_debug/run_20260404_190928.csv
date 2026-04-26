@@ -1,0 +1,3 @@
+filename,hh,mm,ss,style,cx,cy,used_hough,hough_radius,frac_mask_beyond_dial,w,h
+analog_13_16_53_orange.png,13,16,53,orange,200,199,True,158.32000732421875,0.0,400,400
+analog_17_48_46_simple.png,17,48,46,simple,200,200,False,,0.0,400,400

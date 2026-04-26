@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import random
 import sys
 from datetime import datetime
@@ -50,6 +51,20 @@ def parse_args() -> argparse.Namespace:
         default=None,
         metavar="DIR",
         help="Save PNGs here; overrides run_* timestamp folder.",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        metavar="S",
+        help="RNG seed for --sample (reproducible subset).",
+    )
+    parser.add_argument(
+        "--style",
+        type=str,
+        default=None,
+        metavar="NAME",
+        help="Only consider masks whose style token matches (e.g. simple).",
     )
     parsed = parser.parse_args()
     if parsed.show and parsed.save:
@@ -99,6 +114,35 @@ def side_by_side(left_bgr: np.ndarray, mask_2d: np.ndarray) -> np.ndarray:
 def list_mask_files() -> list[Path]:
     """All PNG masks under MASKS_DIR."""
     return sorted(p for p in MASKS_DIR.glob("*.png") if p.is_file())
+
+
+def style_from_mask_stem(stem: str) -> str:
+    """Style part after analog_HH_MM_SS_ (same convention as generate_masks)."""
+    parts = stem.split("_")
+    if len(parts) < 5:
+        return "unknown"
+    return "_".join(parts[4:])
+
+
+def count_styles(paths: list[Path]) -> dict[str, int]:
+    """Occurrences of each style in a path list."""
+    out: dict[str, int] = {}
+    for p in paths:
+        s = style_from_mask_stem(p.stem)
+        out[s] = out.get(s, 0) + 1
+    return dict(sorted(out.items(), key=lambda x: (-x[1], x[0])))
+
+
+def write_style_summary(save_dir: Path, counts: dict[str, int]) -> Path:
+    """Write sample_by_style.csv next to verify PNGs."""
+    out = save_dir / "sample_by_style.csv"
+    save_dir.mkdir(parents=True, exist_ok=True)
+    with out.open("w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["style", "count_in_sample"])
+        for style, c in counts.items():
+            w.writerow([style, c])
+    return out
 
 
 def archive_loose_pngs_in_verify_root() -> None:
@@ -176,6 +220,16 @@ def main() -> None:
         print(f"[ERROR] No masks under {MASKS_DIR}")
         return
 
+    if args.style is not None:
+        masks = [p for p in masks if style_from_mask_stem(p.stem) == args.style]
+        if not masks:
+            print(f"[ERROR] No masks with style={args.style!r}")
+            return
+        print(f"[INFO] Filter style={args.style!r} -> {len(masks)} mask(s)")
+
+    if args.seed is not None:
+        random.seed(args.seed)
+
     n = min(args.sample, len(masks))
     chosen = random.sample(masks, n)
     errors: list[str] = []
@@ -185,11 +239,20 @@ def main() -> None:
         if err:
             errors.append(err)
 
+    style_counts = count_styles(chosen)
+    print("\nSample by style:")
+    for st, c in style_counts.items():
+        print(f"  {st}: {c}")
+
     if use_show:
         mode = "show (cv2 windows)"
     else:
         mode = f"saved under {save_dir}"
+        summary_path = write_style_summary(save_dir, style_counts)
+        print(f"[INFO] Style summary -> {summary_path}")
     print(f"Verified {len(chosen)} image(s) ({mode}).")
+    if args.seed is not None:
+        print(f"[INFO] seed={args.seed}")
     if errors:
         print("Issues:")
         for e in errors:

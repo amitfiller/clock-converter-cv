@@ -43,3 +43,16 @@ models/checkpoints/*.pt
 Thumbs.db
 .vscode/
 .idea/
+
+# Claude Code — local session data, memory, hooks
+.claude/
+
+# Training checkpoints and logs (multi-scale training output)
+checkpoints/
+logs/
+
+# Additional data directories not covered by granular rules above
+data/masks/
+data/masks_backup_*/
+data/train_256/
+demo_outputs/

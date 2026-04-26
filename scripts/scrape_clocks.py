@@ -1,4 +1,8 @@
-import json, pathlib, random, time
+import argparse
+import json
+import pathlib
+import random
+import time
 from pathlib import Path
 
 from PIL import Image
@@ -159,14 +163,48 @@ def furl(p):
     return "file://" + str(pathlib.Path(p).resolve())
 
 
+def parse_args() -> argparse.Namespace:
+    """CLI: optional subset of analog styles (e.g. rescrape orange atc only)."""
+    p = argparse.ArgumentParser(description="Scrape digital + analog clock PNGs.")
+    p.add_argument(
+        "--styles",
+        nargs="+",
+        metavar="NAME",
+        default=None,
+        help="Analog style tokens to capture (default: all). Example: orange atc",
+    )
+    return p.parse_args()
+
+
+def analog_styles_subset(names: list[str] | None) -> list[tuple[str, str]]:
+    """Filter ANALOG_STYLES by label; exit if none match."""
+    if not names:
+        return ANALOG_STYLES
+    want = set(names)
+    out = [x for x in ANALOG_STYLES if x[1] in want]
+    if not out:
+        print(f"[ERROR] No styles in {want!r}. Valid: {[s[1] for s in ANALOG_STYLES]}")
+        raise SystemExit(1)
+    unknown = want - {x[1] for x in out}
+    if unknown:
+        print(f"[WARN] Unknown style(s) ignored: {sorted(unknown)}")
+    return out
+
+
 if __name__ == "__main__":
+    args = parse_args()
+    analog_only = analog_styles_subset(args.styles)
+
     OUT_DIGITAL.mkdir(parents=True, exist_ok=True)
     OUT_ANALOG.mkdir(parents=True, exist_ok=True)
 
     times = build_400_times(EDGE_CASES)
     n_edge = min(len(EDGE_CASES), 400)
     print(f"Times: 400 | Edge cases: {n_edge} | Random fill: {400 - n_edge}")
-    print(f"Expected output: 400 digital + {400 * len(ANALOG_STYLES)} analog\n")
+    print(
+        f"Analog styles this run: {[s[1] for s in analog_only]} "
+        f"({len(analog_only)} of {len(ANALOG_STYLES)})\n"
+    )
 
     pathlib.Path("data").mkdir(exist_ok=True)
     with open("data/times_manifest.json", "w") as f:
@@ -188,7 +226,7 @@ if __name__ == "__main__":
             if not dp.exists():
                 shot(driver, f"{furl(DIGITAL_HTML)}?h={h}&m={m}&s={s}", dp)
 
-            for style_file, style_label in ANALOG_STYLES:
+            for style_file, style_label in analog_only:
                 ap = OUT_ANALOG / f"analog_{tag}_{style_label}.png"
                 if not ap.exists():
                     shot(
@@ -203,6 +241,6 @@ if __name__ == "__main__":
 
         d = len(list(OUT_DIGITAL.glob("*.png")))
         a = len(list(OUT_ANALOG.glob("*.png")))
-        print(f"\n✓ DONE — Digital: {d}  Analog: {a}  Total: {d + a}")
+        print(f"\n[OK] DONE — Digital: {d}  Analog: {a}  Total: {d + a}")
     finally:
         driver.quit()
