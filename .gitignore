@@ -19,6 +19,16 @@ demo_outputs/**
 !demo_outputs/
 !demo_outputs/**/
 !demo_outputs/**/.gitkeep
+data/masks/**
+!data/masks/
+!data/masks/**/
+!data/masks/**/.gitkeep
+
+# Generated images
+*.png
+*.jpg
+*.jpeg
+!*.gitkeep
 
 # Python
 __pycache__/
