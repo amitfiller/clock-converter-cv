@@ -76,7 +76,12 @@ def main() -> None:
     val_loader   = DataLoader(val_ds,   batch_size=1, shuffle=False, num_workers=0)
 
     model = HandSegmenter256().to(device)
-    optimizer = Adam(model.parameters(), lr=1e-3)
+    finetune_ckpt = project_root / "checkpoints" / "unet_256.pth"
+    if finetune_ckpt.exists():
+        _ck = torch.load(finetune_ckpt, map_location=device, weights_only=False)
+        model.load_state_dict(_ck["model_state_dict"])
+        print(f"Loaded checkpoint for fine-tuning (epoch={_ck['epoch']}, val_iou={_ck['val_iou']:.4f})")
+    optimizer = Adam(model.parameters(), lr=1e-4)
     bce_loss = nn.BCEWithLogitsLoss()
     dice_loss = DiceLoss()
     scheduler = ReduceLROnPlateau(optimizer, mode="max", factor=0.5, patience=5)
