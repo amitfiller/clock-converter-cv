@@ -14,21 +14,28 @@ from torchvision.transforms.functional import InterpolationMode
 from src.hand_geometry.draw_hands import draw_hands_on_image
 from src.inpainting.remove_hands import _clock_face_mask, remove_hands, sample_style_geometric
 from src.models.digital_reader import DigitalReader
-from src.models.hand_segmenter import HandSegmenter
+from src.models.hand_segmenter import HandSegmenter, HandSegmenter256
 
 
 class ClockConverterPipeline:
     """Digital clock → time read → analog hands replaced at predicted time."""
 
     def __init__(self, module_a_path: str | Path, module_b_path: str | Path, device: str = "cpu") -> None:
-        """Load Module A/B checkpoints and move models to device."""
+        """Load Module A/B checkpoints, auto-detect HandSegmenter vs HandSegmenter256."""
         self.device = torch.device(device)
         self.reader = DigitalReader().to(self.device)
         a_state = torch.load(module_a_path, map_location=self.device, weights_only=False)
+        # Module A checkpoint may be raw state_dict or wrapped dict
+        if isinstance(a_state, dict) and "model_state_dict" in a_state:
+            a_state = a_state["model_state_dict"]
         self.reader.load_state_dict(a_state)
-        self.segmenter = HandSegmenter().to(self.device)
         b_ck = torch.load(module_b_path, map_location=self.device, weights_only=False)
-        self.segmenter.load_state_dict(b_ck["model_state_dict"])
+        ms = b_ck.get("model_state_dict", b_ck) if isinstance(b_ck, dict) else b_ck
+        if any("enc5" in k for k in ms.keys()):
+            self.segmenter = HandSegmenter256().to(self.device)
+        else:
+            self.segmenter = HandSegmenter().to(self.device)
+        self.segmenter.load_state_dict(ms)
         self.reader.eval()
         self.segmenter.eval()
 
@@ -98,12 +105,15 @@ class ClockConverterPipeline:
             interpolation=cv2.INTER_LINEAR,
         )
         mask_full = cv2.GaussianBlur(mask_full, (0, 0), sigmaX=1.5, sigmaY=1.5)
-        mask_full = (mask_full > 0.08).astype(np.float32)
+        mask_full = (mask_full > 0.20).astype(np.float32)
         mask_upscaled_vis = (np.clip(mask_full, 0.0, 1.0) * 255.0).astype(np.uint8)
         cv2.imwrite(str(debug_dir / "debug_03_mask_upscaled.png"), mask_upscaled_vis)
-        kernel = np.ones((3, 3), np.uint8)
-        closed_vis = cv2.morphologyEx(mask_upscaled_vis, cv2.MORPH_CLOSE, kernel, iterations=1)
-        dilated_vis = cv2.dilate(closed_vis, kernel, iterations=4)
+        # Stage 1: close small gaps in mask
+        kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        closed_vis = cv2.morphologyEx(mask_upscaled_vis, cv2.MORPH_CLOSE, kernel_close, iterations=1)
+        # Stage 2: expand mask to cover hand edges fully
+        kernel_dilate = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        dilated_vis = cv2.dilate(closed_vis, kernel_dilate, iterations=3)
 
         # Mask sanity check before inpainting: excessive coverage triggers softer dilation
         clock_area = int(np.count_nonzero(clock_mask))
@@ -121,11 +131,19 @@ class ClockConverterPipeline:
         # Use the (possibly adjusted) dilated mask as input mask for remove_hands
         mask_for_inpaint = (dilated_vis > 0).astype(np.float32)
         if BYPASS_INPAINT:
-            erode_k = np.ones((7, 7), np.uint8)
-            thin_mask = cv2.erode(mask_for_inpaint.astype(np.uint8), erode_k, iterations=3)
+            kernel_erode = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+            thin_mask = cv2.erode(mask_for_inpaint.astype(np.uint8), kernel_erode, iterations=1)
             thin_mask = cv2.dilate(thin_mask, np.ones((3, 3), np.uint8), iterations=1)
             thin_mask = (thin_mask > 0).astype(np.uint8) * 255
-            clean_analog = cv2.inpaint(analog_bgr, thin_mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+            # Color fallback: catch warm/golden hand pixels the segmenter missed (e.g. vue style)
+            hsv_orig = cv2.cvtColor(analog_bgr, cv2.COLOR_BGR2HSV)
+            golden_mask = cv2.inRange(hsv_orig, np.array([10, 40, 60], dtype=np.uint8),
+                                      np.array([40, 255, 255], dtype=np.uint8))
+            golden_mask = cv2.bitwise_and(golden_mask, clock_mask)
+            kernel_g = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+            golden_mask = cv2.dilate(golden_mask, kernel_g, iterations=2)
+            thin_mask = cv2.bitwise_or(thin_mask, golden_mask)
+            clean_analog = cv2.inpaint(analog_bgr, thin_mask, inpaintRadius=10, flags=cv2.INPAINT_TELEA)
             hand_style = sample_style_geometric(analog_bgr, clock_center[0], clock_center[1], clock_radius)
         else:
             clean_analog, hand_style = remove_hands(
@@ -154,7 +172,7 @@ class ClockConverterPipeline:
 
         # Fix 3c: pass detected clock_center so hands radiate from the real pivot
         # output_image = draw_hands_on_image(clean_analog, h, m, s, hand_style=hand_style)
-        output_image = draw_hands_on_image(clean_analog, h, m, s, hand_style=hand_style, clock_center=clock_center)
+        output_image = draw_hands_on_image(clean_analog, h, m, s, hand_style=hand_style, clock_center=clock_center, clock_radius=clock_radius)
         cv2.imwrite(str(debug_dir / "debug_06_final_output.png"), output_image)
         # Task 5e: resize output back to original input resolution
         if output_image.shape[:2] != (orig_h, orig_w):
@@ -175,3 +193,29 @@ class ClockConverterPipeline:
     def run_batch(self, pairs_list: list[tuple[str | Path, str | Path]]) -> list[dict]:
         """Run pipeline on a list of (digital_path, analog_path) pairs."""
         return [self.run(d, a) for d, a in pairs_list]
+
+
+_default_pipeline: ClockConverterPipeline | None = None
+
+
+def _get_default_pipeline(device: str = "cpu") -> ClockConverterPipeline:
+    """Return a cached pipeline using default checkpoint paths."""
+    global _default_pipeline
+    if _default_pipeline is None:
+        _default_pipeline = ClockConverterPipeline(
+            module_a_path="models/checkpoints/digital_reader_best.pth",
+            module_b_path="checkpoints/unet_256.pth",
+            device=device,
+        )
+    return _default_pipeline
+
+
+def run_pipeline(
+    digital_path: str | Path,
+    analog_path: str | Path,
+    device: str = "cpu",
+) -> np.ndarray:
+    """Convenience wrapper: run end-to-end pipeline and return output BGR image."""
+    pipeline = _get_default_pipeline(device)
+    result = pipeline.run(digital_path, analog_path)
+    return result["output_image"]

@@ -41,7 +41,7 @@ def create_pipeline() -> ClockConverterPipeline:
     """Create pipeline using fixed checkpoint paths."""
     return ClockConverterPipeline(
         module_a_path="models/checkpoints/digital_reader_best.pth",
-        module_b_path="models/checkpoints/hand_segmenter_best.pth",
+        module_b_path="checkpoints/unet_256.pth",
     )
 
 

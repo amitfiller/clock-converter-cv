@@ -8,17 +8,30 @@ import torch.nn.functional as F
 
 
 class DoubleConv(nn.Module):
-    """Apply two Conv-BN-ReLU layers."""
+    """Apply two Conv-GN-ReLU layers.
+
+    GroupNorm replaces BatchNorm2d because training uses batch_size=1 (variable
+    resolution multi-scale). BatchNorm's running_mean/running_var are computed
+    from single-image spatial stats during training (acts like InstanceNorm),
+    but eval mode switches to those running stats — a completely different
+    normalization — causing the model to predict all pixels as positive and
+    Val IoU ≈ mask fill-rate (~2%). GroupNorm has no running stats and
+    behaves identically in train and eval mode.
+    """
+
+    # num_groups=4 divides evenly into all channel widths used: 16,32,64,128,256,512
+    _GROUPS = 4
 
     def __init__(self, in_channels: int, out_channels: int) -> None:
         """Create two-layer convolution block."""
         super().__init__()
+        # bias=True required with GroupNorm (unlike BatchNorm which has its own bias)
         self.block = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(out_channels),
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=True),
+            nn.GroupNorm(self._GROUPS, out_channels),  # replaces nn.BatchNorm2d(out_channels)
             nn.ReLU(inplace=True),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(out_channels),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=True),
+            nn.GroupNorm(self._GROUPS, out_channels),  # replaces nn.BatchNorm2d(out_channels)
             nn.ReLU(inplace=True),
         )
 

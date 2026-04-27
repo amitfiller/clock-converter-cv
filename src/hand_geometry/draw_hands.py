@@ -85,6 +85,7 @@ def draw_hands_on_image(
     s: int,
     hand_style: dict | None = None,
     clock_center: tuple[int, int] | None = None,  # Fix 3a: accept detected clock center
+    clock_radius: int | None = None,
 ) -> np.ndarray:
     """
     Draw clock hands directly on img_bgr using straight lines.
@@ -102,7 +103,10 @@ def draw_hands_on_image(
     minute_angle = m * 6 + s * 0.1
     second_angle = s * 6
 
-    radius = min(out.shape[:2]) // 2
+    if clock_radius is not None and clock_radius > 10:
+        radius = int(clock_radius * 0.90)  # 90% of detected radius — safety margin
+    else:
+        radius = min(out.shape[:2]) // 2
     if hand_style is not None:
         hand_color = _clip_color(tuple(hand_style["color"]))
         color_hour = hand_color
