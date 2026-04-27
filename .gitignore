@@ -49,6 +49,7 @@ Thumbs.db
 
 # Training checkpoints and logs (multi-scale training output)
 checkpoints/
+!checkpoints/unet_256.pth
 logs/
 
 # Additional data directories not covered by granular rules above
